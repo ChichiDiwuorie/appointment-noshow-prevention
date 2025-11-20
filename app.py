@@ -4,7 +4,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
+import pickle  # Still used by some libraries, but we'll use joblib for our model
+import joblib  # ### MODIFIED ### - Using joblib for loading the scikit-learn pipeline
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
@@ -43,66 +44,74 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# LOAD MODEL AND COMPONENTS
+# ### MODIFIED ### - LOAD THE NEW, SINGLE PIPELINE
 # ==============================================================================
 @st.cache_resource
-def load_model_components():
-    """Load trained model, scaler, and feature names."""
+def load_pipeline():
+    """Load the final, custom-trained prediction pipeline from a single file."""
     try:
-        with open('trained_model.pkl', 'rb') as f:
-            model = pickle.load(f)
-
-        with open('scaler.pkl', 'rb') as f:
-            scaler = pickle.load(f)
-
-        with open('feature_names.pkl', 'rb') as f:
-            feature_names = pickle.load(f)
-
-        return model, scaler, feature_names
-    except FileNotFoundError as e:
-        st.error(f"❌ Error loading model files: {e}")
-        st.info("📥 Please ensure trained_model.pkl, scaler.pkl, and feature_names.pkl are in the app's root directory.")
-        # st.stop() will halt the app execution here if files are not found.
+        # This function now loads the single .pkl file created by your training script.
+        pipeline = joblib.load('model/final_model_pipeline.pkl')
+        return pipeline
+    except FileNotFoundError:
+        st.error("❌ Final model file ('model/final_model_pipeline.pkl') not found.")
+        st.info("💡 Please ensure you have run the `train_final_model.py` script to create the model file.")
         st.stop()
 
-# Load model components once at the start
+# Load the entire pipeline once at the start of the app.
 try:
-    model, scaler, feature_names = load_model_components()
+    pipeline = load_pipeline()
 except Exception as e:
-    # This handles the case where the function might fail for other reasons
-    st.error(f"A critical error occurred while loading model components: {e}")
+    st.error(f"A critical error occurred while loading the model pipeline: {e}")
     st.stop()
 
 
 # ==============================================================================
-# HELPER FUNCTIONS
+# ### MODIFIED ### - HELPER FUNCTIONS USING THE PIPELINE
 # ==============================================================================
 
-def validate_csv(df):
-    """Validate uploaded CSV has required columns."""
-    required_columns = set(feature_names)
-    uploaded_columns = set(df.columns)
+def validate_csv(df, pipeline_obj):
+    """Validate uploaded CSV has required columns based on the pipeline's memory."""
+    # The pipeline itself knows which features it was trained on. This is robust!
+    try:
+        required_columns = set(pipeline_obj.feature_names_in_)
+        uploaded_columns = set(df.columns)
+        missing_columns = required_columns - uploaded_columns
 
-    missing_columns = required_columns - uploaded_columns
+        if missing_columns:
+            return False, f"Missing required columns: {', '.join(missing_columns)}"
+        return True, "CSV is valid!"
+    except Exception as e:
+        return False, f"An error occurred during validation: {e}"
 
-    if missing_columns:
-        return False, f"Missing required columns: {', '.join(missing_columns)}"
 
-    return True, "CSV is valid!"
+def make_predictions(df, pipeline_obj):
+    """Make predictions on the uploaded data using the consolidated pipeline."""
+    # No more manual preprocessing! The pipeline handles scaling internally.
+    
+    # Ensure the dataframe has columns in the order the pipeline expects
+    try:
+        X_predict = df[pipeline_obj.feature_names_in_]
+    except KeyError as e:
+        st.error(f"A required column is missing from the uploaded data: {e}")
+        st.stop()
+    
+    # Get predictions and probabilities directly from the pipeline
+    predictions = pipeline_obj.predict(X_predict)
+    probabilities = pipeline_obj.predict_proba(X_predict)[:, 1] # Probability of '1' class (no-show)
 
-def preprocess_data(df):
-    """Preprocess data for model prediction."""
-    # Select only required features in the correct order
-    X = df[feature_names].copy()
+    # Add new columns with prediction results to the original dataframe
+    result_df = df.copy()
+    result_df['predicted_noshow'] = predictions
+    result_df['risk_score'] = probabilities
+    
+    risk_info = [calculate_risk_level(p) for p in probabilities]
+    result_df['risk_level'] = [info[0] for info in risk_info]
+    result_df['risk_icon'] = [info[1] for info in risk_info]
 
-    # Handle any missing values by filling with 0 (a simple strategy)
-    X = X.fillna(0)
+    return result_df
 
-    # Scale features using the loaded scaler
-    X_scaled = scaler.transform(X)
-
-    return X_scaled
-
+# This function remains unchanged as it's pure logic.
 def calculate_risk_level(probability):
     """Convert probability to a risk level category and an emoji icon."""
     if probability < 0.25:
@@ -111,27 +120,6 @@ def calculate_risk_level(probability):
         return "Medium", "🟡"
     else:
         return "High", "🔴"
-
-def make_predictions(df):
-    """Make predictions on the uploaded data."""
-    # Preprocess the data first
-    X_scaled = preprocess_data(df)
-
-    # Get predictions (0 or 1) and probabilities (0.0 to 1.0)
-    predictions = model.predict(X_scaled)
-    probabilities = model.predict_proba(X_scaled)[:, 1] # Probability of the '1' class (no-show)
-
-    # Add new columns with prediction results to the original dataframe
-    result_df = df.copy()
-    result_df['predicted_noshow'] = predictions
-    result_df['risk_score'] = probabilities
-    
-    # Apply the calculate_risk_level function to each probability to get both level and icon
-    risk_info = [calculate_risk_level(p) for p in probabilities]
-    result_df['risk_level'] = [info[0] for info in risk_info]
-    result_df['risk_icon'] = [info[1] for info in risk_info]
-
-    return result_df
 
 # ==============================================================================
 # SIDEBAR NAVIGATION
@@ -230,16 +218,18 @@ if page == "🏠 Home":
     st.subheader("🚀 Quick Start Guide")
 
     with st.expander("📋 What data format do I need?"):
+        # ### MODIFIED ### - Get feature names directly from the loaded pipeline
+        feature_names_from_model = pipeline.feature_names_in_
         st.markdown(f"""
-        Your CSV file should contain these {len(feature_names)} columns:
-        - `{'` - `'.join(feature_names)}`
+        Your CSV file should contain these {len(feature_names_from_model)} columns:
+        - `{'` - `'.join(feature_names_from_model)}`
         """)
 
     with st.expander("❓ How accurate is the prediction?"):
         st.markdown(f"""
         Our Random Forest model achieves **70-85% accuracy** based on:
         - 110,000+ historical appointments
-        - {len(feature_names)} key predictive features
+        - {len(pipeline.feature_names_in_)} key predictive features
         - Validated on test data
 
         The model identifies **high-risk appointments** with >60% confidence.
@@ -276,9 +266,10 @@ elif page == "📤 Upload & Predict":
     if use_sample:
         try:
             st.info("📁 Loading sample data...")
-            df = pd.read_csv('data/sample_data.csv')
+            # ### MODIFIED ### - Point to the new sample data file you created in Step 7
+            df = pd.read_csv('data/appointment_sample_data.csv') 
         except FileNotFoundError:
-            st.error("❌ Sample data file ('data/sample_data.csv') not found. Please create it.")
+            st.error("❌ Sample data file ('data/appointment_sample_data.csv') not found. Please create it.")
             st.stop()
     elif uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
@@ -287,8 +278,8 @@ elif page == "📤 Upload & Predict":
         try:
             st.success(f"✅ Loaded {len(df):,} appointments successfully!")
 
-            # Validate CSV
-            is_valid, message = validate_csv(df)
+            # ### MODIFIED ### - Validate CSV using the pipeline object
+            is_valid, message = validate_csv(df, pipeline)
 
             if not is_valid:
                 st.error(f"❌ {message}")
@@ -306,13 +297,14 @@ elif page == "📤 Upload & Predict":
             with col1:
                 st.metric("Total Appointments", f"{len(df):,}")
             with col2:
-                avg_age = df['age'].mean() if 'age' in df.columns else 0
+                # Use .get() for safe access in case column doesn't exist
+                avg_age = df.get('age', pd.Series([0])).mean()
                 st.metric("Average Age", f"{avg_age:.1f}")
             with col3:
-                avg_lead = df['lead_time_days'].mean() if 'lead_time_days' in df.columns else 0
+                avg_lead = df.get('lead_time_days', pd.Series([0])).mean()
                 st.metric("Avg Lead Time", f"{avg_lead:.1f} days")
             with col4:
-                sms_pct = (df['sms_received'].sum() / len(df) * 100) if 'sms_received' in df.columns else 0
+                sms_pct = (df.get('sms_received', pd.Series([0])).sum() / len(df) * 100)
                 st.metric("SMS Sent", f"{sms_pct:.1f}%")
 
             st.markdown("---")
@@ -320,8 +312,8 @@ elif page == "📤 Upload & Predict":
             # Predict button
             if st.button("🔮 Generate Predictions", type="primary", use_container_width=True):
                 with st.spinner("🤖 Analyzing appointments and generating predictions..."):
-                    # Make predictions
-                    result_df = make_predictions(df)
+                    # ### MODIFIED ### - Make predictions using the pipeline object
+                    result_df = make_predictions(df, pipeline)
 
                     # Store in session state
                     st.session_state['predictions'] = result_df
@@ -370,15 +362,14 @@ elif page == "📤 Upload & Predict":
                     'risk_score', ascending=False
                 )
 
-                if len(high_risk_df) > 0:
-                    # Define columns to display
+                if not high_risk_df.empty:
+                    # Define columns to display dynamically based on what's available
                     display_cols = ['age', 'lead_time_days', 'sms_received', 'risk_score', 'risk_level']
                     if 'appointment_id' in high_risk_df.columns:
                         display_cols.insert(0, 'appointment_id')
                     elif 'patient_id' in high_risk_df.columns:
                         display_cols.insert(0, 'patient_id')
-
-                    # Filter for columns that actually exist in the dataframe
+                    
                     display_cols = [col for col in display_cols if col in high_risk_df.columns]
 
                     st.dataframe(
@@ -404,7 +395,7 @@ elif page == "📤 Upload & Predict":
                     )
 
                 with col2:
-                    if len(high_risk_df) > 0:
+                    if not high_risk_df.empty:
                         high_risk_csv = high_risk_df.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             label="🚨 Download High-Risk Only (CSV)",
@@ -459,10 +450,10 @@ elif page == "📊 Analytics Dashboard":
             fig, ax = plt.subplots(figsize=(8, 6))
             colors = {'Low': '#2ecc71', 'Medium': '#f39c12', 'High': '#e74c3c'}
             ax.pie(risk_counts, labels=risk_counts.index, autopct='%1.1f%%',
-                   colors=[colors[key] for key in risk_counts.index], startangle=90)
+                   colors=[colors.get(key, '#95a5a6') for key in risk_counts.index], startangle=90)
             ax.set_title('Appointments by Risk Level')
             st.pyplot(fig)
-            plt.close(fig) # Important: Close the figure to free up memory
+            plt.close(fig) 
 
         with col2:
             st.markdown("#### Risk Score Distribution")
@@ -481,13 +472,17 @@ elif page == "📊 Analytics Dashboard":
         # Pattern Analysis
         st.subheader("🔍 Pattern Analysis")
         col1, col2 = st.columns(2)
+        
+        # Initialize these outside the 'if' blocks to handle cases where they aren't created
+        age_risk = pd.Series()
+        lead_risk = pd.Series()
 
         with col1:
             if 'age' in df.columns:
                 st.markdown("#### Risk Score by Age Group")
                 df['age_group'] = pd.cut(df['age'], bins=[0, 18, 35, 50, 65, 120],
                                          labels=['0-18', '19-35', '36-50', '51-65', '65+'], right=False)
-                age_risk = df.groupby('age_group')['risk_score'].mean() * 100
+                age_risk = df.groupby('age_group', observed=True)['risk_score'].mean() * 100
 
                 fig, ax = plt.subplots(figsize=(8, 6))
                 age_risk.plot(kind='bar', ax=ax, color='coral')
@@ -502,9 +497,9 @@ elif page == "📊 Analytics Dashboard":
             if 'lead_time_days' in df.columns:
                 st.markdown("#### Risk Score by Lead Time")
                 df['lead_time_category'] = pd.cut(df['lead_time_days'],
-                                                   bins=[-1, 7, 14, 30, 60, 365], # Start from -1 to include 0
+                                                   bins=[-1, 7, 14, 30, 60, 365], 
                                                    labels=['0-7', '8-14', '15-30', '31-60', '60+'])
-                lead_risk = df.groupby('lead_time_category')['risk_score'].mean() * 100
+                lead_risk = df.groupby('lead_time_category', observed=True)['risk_score'].mean() * 100
 
                 fig, ax = plt.subplots(figsize=(8, 6))
                 lead_risk.plot(kind='bar', ax=ax, color='teal')
@@ -521,18 +516,17 @@ elif page == "📊 Analytics Dashboard":
         insights_col1, insights_col2 = st.columns(2)
 
         with insights_col1:
-            if 'age' in df.columns and not age_risk.empty:
+            if not age_risk.empty:
                 st.info(f"""
                 **Highest Risk Group:**  
                 {age_risk.idxmax()} age group with {age_risk.max():.1f}% avg risk score
                 """)
         with insights_col2:
-            if 'lead_time_days' in df.columns and not lead_risk.empty:
+            if not lead_risk.empty:
                 st.info(f"""
                 **Critical Lead Time:**  
                 Appointments {lead_risk.idxmax()} days out have highest risk ({lead_risk.max():.1f}%)
                 """)
-
 
 # ==============================================================================
 # PAGE 4: ABOUT
