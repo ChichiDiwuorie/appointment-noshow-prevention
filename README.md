@@ -109,7 +109,7 @@ App opens at `http://localhost:8501`
 
 | Member | Role | Contact |
 |--------|------|---------|
-| Chichi Iwuorie | Project Manager | [[https://www.linkedin.com/in/chinwenduiwuorie/](link) |
+| Chichi Iwuorie | Project Manager | [https://www.linkedin.com/in/chinwenduiwuorie/](link) |
 | Judah Bowers | Software Engineer | [https://www.linkedin.com/in/judah-bowers/](link) |
 | Himanshu Panchal | Data Analyst | [https://www.linkedin.com/in/himanshu--panchal/](link) |
 
