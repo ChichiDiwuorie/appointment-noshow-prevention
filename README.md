@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.33+-red.svg)](https://streamlit.io/)
 
-**🌐 Live Demo:** [Your Streamlit App URL]  
+**🌐 Live Demo:** https://appointment-noshow-prevention.streamlit.app/  
 **👥 Team:** Chichi Iwuorie (PM) | Judah Bowers (Software Engineer) | Himanshu Panchal (Data Analyst)  
 **📅 Date:** November 2025
 
