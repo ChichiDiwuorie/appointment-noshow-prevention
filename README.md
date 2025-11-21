@@ -30,11 +30,11 @@ A **Python-powered automated system** that:
 
 ## ✨ Key Features
 
-- ✅ **Automated Data Pipeline** - Upload CSV, auto-clean and validate
-- ✅ **Risk Prediction** - Random Forest ML model (70% accuracy)
-- ✅ **Interactive Dashboard** - Real-time visualizations and statistics
-- ✅ **One-Click Reports** - Download high-risk appointment lists
-- ✅ **Web Deployment** - Zero installation, browser-based access
+-  **Automated Data Pipeline** - Upload CSV, auto-clean and validate
+-  **Risk Prediction** - Random Forest ML model (70% accuracy)
+-  **Interactive Dashboard** - Real-time visualizations and statistics
+-  **One-Click Reports** - Download high-risk appointment lists
+-  **Web Deployment** - Zero installation, browser-based access
 
 ---
 
